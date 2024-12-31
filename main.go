@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -36,6 +37,19 @@ func newOTLPExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
 	return otlptracehttp.New(ctx, insecureOpt, endpointOpt)
 }
 
+func newGeneralExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
+	endpointOpt := otlptracehttp.WithEndpointURL("http://localhost:4318")
+	insecureOpt := otlptracehttp.WithInsecure()
+
+	client := otlptracehttp.NewClient(endpointOpt, insecureOpt)
+
+	exporter, err := otlptrace.New(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("new otlptrace exporter: %w", err)
+	}
+	return exporter, nil
+}
+
 func newTraceProvider(exp sdktrace.SpanExporter) (*sdktrace.TracerProvider, error) {
 	res1 := resource.Default()
 	res2 := resource.NewWithAttributes(semconv.SchemaURL, semconv.ServiceName("myapp"))
@@ -51,8 +65,9 @@ func newTraceProvider(exp sdktrace.SpanExporter) (*sdktrace.TracerProvider, erro
 }
 func main() {
 	ctx := context.Background()
-	exp, err := newOTLPExporter(ctx)
+	// exp, err := newOTLPExporter(ctx)
 	// exp, err := newConsoleExporter()
+	exp, err := newGeneralExporter(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
