@@ -59,7 +59,10 @@ func newTraceProvider(exp sdktrace.SpanExporter) (*sdktrace.TracerProvider, erro
 		return nil, fmt.Errorf("merging resources: %w", err)
 	}
 
-	batcherOpt := sdktrace.WithBatcher(exp)
+	limitBatcherOpt := sdktrace.WithMaxExportBatchSize(sdktrace.DefaultMaxExportBatchSize)
+	timoutOpt := sdktrace.WithBatchTimeout(sdktrace.DefaultScheduleDelay * time.Millisecond)
+
+	batcherOpt := sdktrace.WithBatcher(exp, limitBatcherOpt, timoutOpt)
 	resorceOpt := sdktrace.WithResource(resource)
 	return sdktrace.NewTracerProvider(batcherOpt, resorceOpt), nil
 }
