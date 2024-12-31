@@ -1,0 +1,70 @@
+#Controls whether Tempo sends usage reports to Grafana Labs
+usage_report:
+  reporting_enabled: false
+
+#Specifies the port on which Tempo will listen for incoming HTTP requests.
+server:
+  http_listen_port: 3200
+
+# Configures how Tempo will receive trace data from external systems, such as OpenTelemetry, Jaeger, Zipkin, etc.
+distributor:
+  # This section defines the protocols Tempo uses to receive traces.
+  # In this case, it is configured to receive traces via OTLP (OpenTelemetry Protocol) over both HTTP and gRPC
+  receivers:
+    otlp:
+      protocols:
+        # Tempo will accept traces via HTTP.
+        http:
+        # Tempo will accept traces via gRPC
+        grpc:
+
+# Configures the ingester component, which processes traces and decides when to flush them to storage.
+ingester:
+  trace_idle_period: 10s # The amount of time Tempo waits after the last span of a trace has arrived before considering the trace complete and flushing it.
+  max_block_bytes: 1_000_000 # Defines the maximum size (in bytes) for an in-memory trace block before it gets written to storage. 1MB
+  max_block_duration: 5m #  The maximum duration (in minutes) a block of traces can remain open before it is flushed to storage,
+#regardless of its size.
+
+# Configures how Tempo compacts trace data, which involves merging smaller blocks into larger ones for efficiency.
+compactor:
+  compaction:
+    # Defines the time window in which traces will be compacted together.
+    # In this case, traces within a 1-hour window will be grouped and compacted.
+    compaction_window: 1h # blocks in this time window will be compacted together
+    max_block_bytes: 100_000_000 # Maximum size (in bytes) of a block after compaction
+    # Defines how long (in hours) Tempo will keep un-compacted blocks before they are discarded.
+    block_retention: 1h
+    compacted_block_retention: 10m
+
+# Configures the backend storage settings for trace data.
+# This section includes settings for storing traces on disk, as well as configurations for indexing and compression.
+storage:
+  trace:
+    # Specifies the type of storage to use for traces. In this case, it's set to local, meaning traces will be stored on the local file system.
+    backend: local # backend configuration to use
+    block:
+      # Bloom Filter is like a very fast "yes or no" checker for whether a trace might exist in a block of data.
+      # It’s not always accurate but can quickly say:
+
+      # "Yes" (it might exist, so we check further), or
+      # "No" (it definitely doesn’t exist, so we skip it).
+      bloom_filter_false_positive: .05 # bloom filter false positive rate.  lower values create larger filters but fewer false positives
+      # Defines how much data (in bytes) is grouped into one index entry.
+      # A smaller value means the index will be more detailed, but it might use more storage.
+      # A larger value makes the index coarser, saving space but potentially slowing lookups.
+      v2_index_downsample_bytes: 1000 # number of bytes per index record
+      # Specifies the type of compression used to store trace data.
+      v2_encoding: zstd # block encoding/compression.  options: none, gzip, lz4-64k, lz4-256k, lz4-1M, lz4, snappy, zstd, s2
+    wal:
+      # Where to store the Write-Ahead Log locally. This log records recent trace activity before it is flushed to permanent storage.
+      path: /tmp/tempo/wal # where to store the the wal locally
+      v2_encoding: snappy # wal encoding/compression.  options: none, gzip, lz4-64k, lz4-256k, lz4-1M, lz4, snappy, zstd, s2
+    local:
+      # The local directory where trace blocks are stored
+      path: /tmp/tempo/blocks
+    pool:
+      max_workers: 100 # worker pool determines the number of parallel requests to the object store backend
+      queue_depth: 10000
+
+overrides:
+  metrics_generator_processors: [service-graphs, span-metrics]

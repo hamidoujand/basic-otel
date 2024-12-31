@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    ports:
+      - "3200:3200"  # HTTP server port
+      - "4317:4317"  # OTLP gRPC receiver
+      - "4318:4318"  # OTLP HTTP receiver
+      - "9411:9411" 
+      - "14268:14268"
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml  # Mount the local config file into the container
+    command: ["-config.file=/etc/tempo.yaml"]  # Pass the config file path
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: grafana
+    ports:
+      - "3000:3000"  # Grafana web UI
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin         # Default admin username
+      - GF_SECURITY_ADMIN_PASSWORD=admin     # Default admin password
+    volumes:
+      - grafana-data:/var/lib/grafana         # Persist Grafana data locally
+    depends_on:
+      - tempo
+
+volumes:
+  grafana-data: {}
