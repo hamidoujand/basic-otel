@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -92,11 +93,12 @@ func main() {
 
 	otel.SetTracerProvider(provider)
 
-	tracer = provider.Tracer("myapp")
+	tracer = provider.Tracer("myapp") // service name.
 
 	server := http.Server{
-		Addr:    ":8000",
-		Handler: http.HandlerFunc(helloHandler),
+		Addr: ":8000",
+		//adding the root span for all reuqests.
+		Handler: otelhttp.NewHandler(http.HandlerFunc(helloHandler), "requests"),
 	}
 
 	shutdown := make(chan os.Signal, 1)
