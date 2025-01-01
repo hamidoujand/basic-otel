@@ -73,7 +73,14 @@ func newTraceProvider(exp sdktrace.SpanExporter) (*sdktrace.TracerProvider, erro
 
 	batcherOpt := sdktrace.WithBatcher(exp, limitBatcherOpt, timoutOpt)
 	resorceOpt := sdktrace.WithResource(resource)
-	return sdktrace.NewTracerProvider(batcherOpt, resorceOpt), nil
+
+	//hardcoded routes
+	exclude := map[string]struct{}{
+		"/private": {},
+	}
+
+	samplerOpt := sdktrace.WithSampler(newEndpointExcluder(exclude, 0.5))
+	return sdktrace.NewTracerProvider(batcherOpt, resorceOpt, samplerOpt), nil
 }
 func main() {
 	ctx := context.Background()
@@ -132,4 +139,40 @@ func db(ctx context.Context) {
 	defer span.End()
 
 	time.Sleep(time.Second * 2)
+}
+
+//==============================================================================
+// Custom Sampler
+
+type endpointExcluder struct {
+	endpoints   map[string]struct{}
+	probability float64
+}
+
+func newEndpointExcluder(endpoints map[string]struct{}, probability float64) endpointExcluder {
+	return endpointExcluder{
+		endpoints:   endpoints,
+		probability: probability,
+	}
+}
+
+func (epx endpointExcluder) Description() string {
+	return "Custom Sampler"
+}
+
+// ShouldSample implements the sampler interface. It prevents the specified
+// endpoints from being added to the trace.
+func (epx endpointExcluder) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
+	for i := range parameters.Attributes {
+		// "http.target" represents the full request target as it appears in the HTTP request line,
+		//typically including the path and query string (e.g., /home?user=123).
+		if parameters.Attributes[i].Key == "http.target" {
+			path := parameters.Attributes[i].Value.AsString()
+			if _, ok := epx.endpoints[path]; ok {
+				return sdktrace.SamplingResult{Decision: sdktrace.Drop}
+			}
+		}
+	}
+
+	return sdktrace.TraceIDRatioBased(epx.probability).ShouldSample(parameters)
 }
