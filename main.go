@@ -12,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -38,10 +39,17 @@ func newOTLPExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
 }
 
 func newGeneralExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
-	endpointOpt := otlptracehttp.WithEndpointURL("http://localhost:4318")
-	insecureOpt := otlptracehttp.WithInsecure()
+	//HTTP
+	// endpointOpt := otlptracehttp.WithEndpointURL("http://localhost:4318")
+	// insecureOpt := otlptracehttp.WithInsecure()
 
-	client := otlptracehttp.NewClient(endpointOpt, insecureOpt)
+	//gRPC
+	endpointOpt := otlptracegrpc.WithEndpointURL("http://localhost:4317")
+	insecureOpt := otlptracegrpc.WithInsecure()
+
+	// client := otlptracehttp.NewClient(endpointOpt, insecureOpt)
+
+	client := otlptracegrpc.NewClient(endpointOpt, insecureOpt)
 
 	exporter, err := otlptrace.New(ctx, client)
 	if err != nil {
