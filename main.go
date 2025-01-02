@@ -12,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -125,21 +126,20 @@ func main() {
 }
 
 func helloHandler(w http.ResponseWriter, r *http.Request) {
-	tracerFromCtx := r.Context().Value(tracerCtxKey).(trace.Tracer)
-	ctx, span := tracerFromCtx.Start(r.Context(), "HTTP GET /")
+	ctx, span := addSpan(r.Context(), "HTTP Method: GET / ")
 	defer span.End()
 
 	log.Println("Handler was hit by:", r.RemoteAddr)
 
-	db(ctx, tracerFromCtx)
+	db(ctx)
 	time.Sleep(time.Second * 1)
 
 	w.Write([]byte("OK!"))
 }
 
-func db(ctx context.Context, tracer trace.Tracer) {
+func db(ctx context.Context) {
 
-	_, span := tracer.Start(ctx, "SQL SELECT")
+	_, span := addSpan(ctx, "SQL SELECT POSTGRES")
 	defer span.End()
 
 	time.Sleep(time.Second * 2)
@@ -204,4 +204,18 @@ func addTracer(tracer trace.Tracer) Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// ==============================================================================
+func addSpan(ctx context.Context, spanName string, keyvalues ...attribute.KeyValue) (context.Context, trace.Span) {
+	tracer, ok := ctx.Value(tracerCtxKey).(trace.Tracer)
+	if !ok || tracer == nil {
+		return ctx, trace.SpanFromContext(ctx)
+	}
+
+	ctx, span := tracer.Start(ctx, spanName)
+	for _, kv := range keyvalues {
+		span.SetAttributes(kv)
+	}
+	return ctx, span
 }
