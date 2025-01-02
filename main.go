@@ -129,7 +129,8 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, span := addSpan(r.Context(), "HTTP Method: GET / ")
 	defer span.End()
 
-	log.Println("Handler was hit by:", r.RemoteAddr)
+	traceID := getTraceID(r.Context())
+	log.Println("Handler was hit by:", traceID)
 
 	db(ctx)
 	time.Sleep(time.Second * 1)
@@ -187,10 +188,23 @@ type ctxKey int
 
 const (
 	tracerCtxKey = iota
+	traceIDKey
 )
 
 func addTracerToCtx(ctx context.Context, tracer trace.Tracer) context.Context {
 	return context.WithValue(ctx, tracerCtxKey, tracer)
+}
+
+func setTraceID(ctx context.Context, traceID string) context.Context {
+	return context.WithValue(ctx, traceIDKey, traceID)
+}
+
+func getTraceID(ctx context.Context) string {
+	traceID, ok := ctx.Value(traceIDKey).(string)
+	if !ok {
+		return "00000000000000000000000000000000"
+	}
+	return traceID
 }
 
 type Middleware func(next http.Handler) http.Handler
@@ -200,6 +214,9 @@ func addTracer(tracer trace.Tracer) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			ctx = addTracerToCtx(ctx, tracer)
+			//grab the traceID from ctx
+			traceID := trace.SpanFromContext(ctx).SpanContext().TraceID().String()
+			ctx = setTraceID(ctx, traceID)
 			r = r.WithContext(ctx)
 			next.ServeHTTP(w, r)
 		})
