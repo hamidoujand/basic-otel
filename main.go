@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -81,7 +82,22 @@ func newTraceProvider(exp sdktrace.SpanExporter) (*sdktrace.TracerProvider, erro
 	}
 
 	samplerOpt := sdktrace.WithSampler(newEndpointExcluder(exclude, 0.5))
-	return sdktrace.NewTracerProvider(batcherOpt, resorceOpt, samplerOpt), nil
+
+	provider := sdktrace.NewTracerProvider(batcherOpt, resorceOpt, samplerOpt)
+
+	//set this provider as global trace provider
+	otel.SetTracerProvider(provider)
+
+	//use a customized propagator
+	//For distributed systems, combining TraceContext and Baggage is common because:
+	// TraceContext ensures trace information flows between services.
+	// Baggage allows custom key-value metadata to propagate for additional context.
+	compositeMapPropgator := propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	)
+	otel.SetTextMapPropagator(compositeMapPropgator)
+	return provider, nil
 }
 func main() {
 	ctx := context.Background()
@@ -104,11 +120,12 @@ func main() {
 	tracer = provider.Tracer("myapp") // service name.
 
 	injectedTracer := addTracer(tracer)(http.HandlerFunc(helloHandler))
+	withPropagation := tracePropagation(injectedTracer)
 
 	server := http.Server{
 		Addr: ":8000",
 		//adding the root span for all reuqests.
-		Handler: otelhttp.NewHandler(injectedTracer, "requests"),
+		Handler: otelhttp.NewHandler(withPropagation, "requests"),
 	}
 
 	shutdown := make(chan os.Signal, 1)
@@ -221,6 +238,19 @@ func addTracer(tracer trace.Tracer) Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func tracePropagation(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract trace context from incoming request headers
+		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+		// Pass the updated context to the next handler
+		next.ServeHTTP(w, r.WithContext(ctx))
+
+		// Inject trace context into the response headers
+		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(w.Header()))
+	})
 }
 
 // ==============================================================================
