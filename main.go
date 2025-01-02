@@ -102,10 +102,12 @@ func main() {
 
 	tracer = provider.Tracer("myapp") // service name.
 
+	injectedTracer := addTracer(tracer)(http.HandlerFunc(helloHandler))
+
 	server := http.Server{
 		Addr: ":8000",
 		//adding the root span for all reuqests.
-		Handler: otelhttp.NewHandler(http.HandlerFunc(helloHandler), "requests"),
+		Handler: otelhttp.NewHandler(injectedTracer, "requests"),
 	}
 
 	shutdown := make(chan os.Signal, 1)
@@ -123,18 +125,20 @@ func main() {
 }
 
 func helloHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, span := tracer.Start(r.Context(), "HTTP GET /")
+	tracerFromCtx := r.Context().Value(tracerCtxKey).(trace.Tracer)
+	ctx, span := tracerFromCtx.Start(r.Context(), "HTTP GET /")
 	defer span.End()
 
 	log.Println("Handler was hit by:", r.RemoteAddr)
 
-	db(ctx)
+	db(ctx, tracerFromCtx)
 	time.Sleep(time.Second * 1)
 
 	w.Write([]byte("OK!"))
 }
 
-func db(ctx context.Context) {
+func db(ctx context.Context, tracer trace.Tracer) {
+
 	_, span := tracer.Start(ctx, "SQL SELECT")
 	defer span.End()
 
@@ -175,4 +179,29 @@ func (epx endpointExcluder) ShouldSample(parameters sdktrace.SamplingParameters)
 	}
 
 	return sdktrace.TraceIDRatioBased(epx.probability).ShouldSample(parameters)
+}
+
+// ==============================================================================
+// Middlewares
+type ctxKey int
+
+const (
+	tracerCtxKey = iota
+)
+
+func addTracerToCtx(ctx context.Context, tracer trace.Tracer) context.Context {
+	return context.WithValue(ctx, tracerCtxKey, tracer)
+}
+
+type Middleware func(next http.Handler) http.Handler
+
+func addTracer(tracer trace.Tracer) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			ctx = addTracerToCtx(ctx, tracer)
+			r = r.WithContext(ctx)
+			next.ServeHTTP(w, r)
+		})
+	}
 }
